@@ -1,0 +1,2201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PawSense — IoT Smart Pet Care Station & Mobile Companion</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono for Virtual Pins / Telemetry -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* Custom subtle utilities for gauges, scrollbars, and animations */
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .vpin-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      padding: 0.125rem 0.42rem;
+      border-radius: 0.375rem;
+      background-color: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      white-space: nowrap;
+    }
+    .vpin-badge-teal {
+      background-color: #f0fdfa;
+      color: #0f766e;
+      border-color: #99f6e4;
+    }
+    .vpin-badge-amber {
+      background-color: #fffbeb;
+      color: #b45309;
+      border-color: #fde68a;
+    }
+    .vpin-badge-indigo {
+      background-color: #eef2ff;
+      color: #4338ca;
+      border-color: #c7d2fe;
+    }
+    /* Smooth SVG circular gauge transitions */
+    .gauge-ring {
+      transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.4s ease;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+    /* Custom thin scrollbar for logs and mobile frame */
+    .thin-scroll::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .thin-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .thin-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    /* Camera shutter flash animation */
+    @keyframes shutterFlash {
+      0% { opacity: 0.95; }
+      100% { opacity: 0; }
+    }
+    .animate-shutter {
+      animation: shutterFlash 0.45s ease-out forwards;
+    }
+    /* Mobile push notification slide-down */
+    @keyframes slideDownPush {
+      0% { transform: translateY(-110%); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    .animate-push {
+      animation: slideDownPush 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-teal-100 selection:text-teal-900">
+
+  <!-- ===================================================================== -->
+  <!-- TOAST NOTIFICATION CONTAINER (Replaces browser alert() / confirm())   -->
+  <!-- ===================================================================== -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <!-- ===================================================================== -->
+  <!-- BLYNK VIRTUAL PIN MAPPING REFERENCE MODAL                             -->
+  <!-- ===================================================================== -->
+  <div id="vpin-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="text-lg font-bold text-slate-900">Blynk IoT Virtual Pin Map (V0 – V14)</h3>
+          <p class="text-xs text-slate-500 mt-0.5">Direct firmware &amp; REST API mapping for PawSense ESP32 &amp; ESP32-CAM</p>
+        </div>
+        <button onclick="toggleVpinModal(false)" class="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 transition" aria-label="Close modal">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto thin-scroll space-y-4">
+        <div class="bg-teal-50/80 border border-teal-200 rounded-xl p-3.5 text-xs text-teal-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span class="font-bold">Blynk Cloud REST Endpoints:</span>
+            <code class="font-mono bg-white/80 px-1.5 py-0.5 rounded border border-teal-200 ml-1">/external/api/get?token=AUTH&amp;v0&amp;v1...</code>
+          </div>
+          <button onclick="copyPinTableToClipboard()" class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg transition self-start sm:self-auto shrink-0">
+            Copy Pin Map
+          </button>
+        </div>
+        <div class="overflow-x-auto border border-slate-200 rounded-xl">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+              <tr>
+                <th class="py-2.5 px-3">Pin</th>
+                <th class="py-2.5 px-3">Datastream Name</th>
+                <th class="py-2.5 px-3">Hardware Source / Actuator</th>
+                <th class="py-2.5 px-3">Data Type &amp; Values</th>
+              </tr>
+            </thead>
+            <tbody id="vpin-table-body" class="divide-y divide-slate-100 text-slate-700"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- 1. TOP NAVIGATION BAR                                                 -->
+  <!-- ===================================================================== -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        
+        <!-- Brand & Hardware Status Badges -->
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white shadow-sm shrink-0">
+            <!-- Custom Paw + Water Droplet SVG Logo -->
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.5c-3.2 4.1-5.5 6.8-5.5 9.8a5.5 5.5 0 0011 0c0-3-2.3-5.7-5.5-9.8z" />
+              <circle cx="9.8" cy="13.5" r="0.9" fill="currentColor" stroke="none" />
+              <circle cx="14.2" cy="13.5" r="0.9" fill="currentColor" stroke="none" />
+              <circle cx="12" cy="11.7" r="0.9" fill="currentColor" stroke="none" />
+              <path stroke-linecap="round" d="M10.2 15.8c.5.6 3.1.6 3.6 0" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900">PawSense</h1>
+              <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-700 border border-teal-200">
+                IoT Pet Care v1.0
+              </span>
+            </div>
+            <!-- ESP32 & ESP32-CAM Online Status Badges -->
+            <div class="flex flex-wrap items-center gap-2 mt-0.5">
+              <span id="badge-esp32" class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                ESP32 MCU: Online
+              </span>
+              <span id="badge-cam" class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                ESP32-CAM: Online
+              </span>
+              <button onclick="toggleVpinModal(true)" class="text-[11px] font-mono font-semibold text-slate-600 hover:text-teal-700 underline decoration-dotted underline-offset-2 ml-1">
+                [Pin Map V0–V14]
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- View Mode & Connection Mode Toggles -->
+        <div class="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-between lg:justify-end">
+          
+          <!-- View Mode Toggle -->
+          <div class="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200" role="group" aria-label="View Mode">
+            <button id="btn-view-web" onclick="setViewMode('web')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-white text-slate-900 shadow-2xs">
+              <svg class="w-3.5 h-3.5 text-teal-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8M12 18v2"/></svg>
+              <span>Full Web Dashboard</span>
+            </button>
+            <button id="btn-view-mobile" onclick="setViewMode('mobile')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
+              <svg class="w-3.5 h-3.5 text-teal-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+              <span>Mobile Companion Preview</span>
+            </button>
+          </div>
+
+          <!-- Connection Mode Toggle -->
+          <div class="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200" role="group" aria-label="Connection Mode">
+            <button id="btn-conn-sim" onclick="setConnectionMode('simulator')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-teal-600 text-white shadow-2xs">
+              <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+              <span>Interactive Simulator</span>
+            </button>
+            <button id="btn-conn-blynk" onclick="setConnectionMode('blynk')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+              <span>Blynk Cloud REST API</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Collapsible Blynk Cloud REST API Configuration Strip -->
+      <div id="blynk-config-bar" class="hidden mt-3 pt-3 border-t border-slate-200">
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col md:flex-row items-stretch md:items-end gap-3">
+          <div class="flex-1">
+            <label for="blynk-server-url" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              Blynk Server URL
+            </label>
+            <input id="blynk-server-url" type="text" value="https://blynk.cloud" placeholder="https://blynk.cloud"
+              class="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" />
+          </div>
+          <div class="flex-1">
+            <label for="blynk-auth-token" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              Device Auth Token (<span class="font-mono">BLYNK_AUTH_TOKEN</span>)
+            </label>
+            <input id="blynk-auth-token" type="text" placeholder="Paste 32-character Blynk Device Token..."
+              class="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" />
+          </div>
+          <div class="w-full md:w-36">
+            <label for="blynk-poll-rate" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              Poll Interval
+            </label>
+            <select id="blynk-poll-rate" class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="2000">Every 2s</option>
+              <option value="5000" selected>Every 5s</option>
+              <option value="10000">Every 10s</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-blynk-connect" onclick="toggleBlynkPolling()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg transition shadow-2xs whitespace-nowrap">
+              Connect &amp; Sync
+            </button>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mt-2 text-[11px] text-slate-500 px-1">
+          <span id="blynk-api-status" class="font-mono">Status: Idle — Configure token and click Connect &amp; Sync (GET /external/api/get)</span>
+          <span class="font-mono text-slate-400">Write Endpoint: GET /external/api/update?token=...&amp;vX=val</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN CONTENT AREA                                                     -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- =================================================================== -->
+    <!-- VIEW 1: FULL WEB DASHBOARD                                          -->
+    <!-- =================================================================== -->
+    <div id="web-dashboard-view" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- ----------------------------------------------------------------- -->
+      <!-- CARD 2: WATER HYGIENE & UV-C SAFETY (Left 6 Columns)              -->
+      <!-- ----------------------------------------------------------------- -->
+      <section class="lg:col-span-6 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6 flex flex-col justify-between">
+        <div>
+          <!-- Card Header -->
+          <div class="flex flex-wrap items-start justify-between gap-2 pb-4 border-b border-slate-100">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-teal-500"></span>
+                <h2 class="text-base sm:text-lg font-bold text-slate-900">Water Hygiene &amp; UV-C Safety</h2>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Turbidity filtration, 500 mL level &amp; 30 cm optical interlock</p>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <span class="vpin-badge vpin-badge-teal">V0 Purity</span>
+              <span class="vpin-badge vpin-badge-teal">V1 NTU</span>
+              <span class="vpin-badge">V2–V6</span>
+            </div>
+          </div>
+
+          <!-- Top Metrics Row: Purity Gauge + Turbidity + 500mL Reservoir Tank -->
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-5 items-center">
+            
+            <!-- Radial Water Purity Index & Turbidity Gauge -->
+            <div class="sm:col-span-7 bg-slate-50/80 border border-slate-200/70 rounded-2xl p-4 flex items-center gap-4">
+              <div class="relative w-28 h-28 shrink-0">
+                <svg class="w-28 h-28" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#e2e8f0" stroke-width="10" />
+                  <circle id="purity-gauge-circle" class="gauge-ring" cx="50" cy="50" r="40" fill="none" stroke="#0d9488" stroke-width="10" stroke-linecap="round" stroke-dasharray="251.3" stroke-dashoffset="15" />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span id="water-purity-val" class="text-2xl font-extrabold text-slate-900 leading-none">94%</span>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-1">Purity <span class="font-mono text-teal-700">V0</span></span>
+                </div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-1">
+                  <span class="text-xs font-semibold text-slate-500">Turbidity Sensor</span>
+                  <span class="vpin-badge vpin-badge-teal">V1</span>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span id="turbidity-ntu-val" class="text-2xl font-extrabold font-mono text-slate-900">2.4</span>
+                  <span class="text-xs font-semibold text-slate-500">NTU</span>
+                </div>
+                <span id="water-quality-pill" class="mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+                  ● Crystal Clear
+                </span>
+                <!-- Simulator quick test button for dirty water -->
+                <div class="mt-2.5 sim-only">
+                  <button onclick="simulateHighTurbidity()" class="text-[11px] font-semibold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg transition">
+                    Test Dirty Water Spike
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 500 mL Reservoir Level & Float Switch Indicator -->
+            <div class="sm:col-span-5 bg-slate-50/80 border border-slate-200/70 rounded-2xl p-4 flex flex-col justify-between h-full">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-600">500 mL Reservoir</span>
+                <span class="vpin-badge vpin-badge-teal">V3</span>
+              </div>
+              <div class="flex items-center gap-3 my-2.5">
+                <!-- Visual Water Tank -->
+                <div class="w-10 h-16 rounded-xl border-2 border-slate-300 bg-white overflow-hidden flex flex-col justify-end p-0.5 shrink-0">
+                  <div id="reservoir-water-fill" class="w-full bg-gradient-to-t from-teal-500 to-cyan-400 rounded-lg transition-all duration-500" style="height: 86%;"></div>
+                </div>
+                <div>
+                  <div id="reservoir-ml-text" class="text-lg font-extrabold text-slate-900">430 mL</div>
+                  <div id="float-switch-badge" class="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Float Switch: OK
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 sim-only">
+                <button onclick="toggleReservoirLow()" class="w-full text-[11px] font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 py-1 px-2 rounded-lg transition">
+                  Toggle Low / Refill
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Adjustable Purity Threshold Slider (V2) -->
+          <div class="mt-4 bg-slate-50/80 border border-slate-200/70 rounded-xl p-3.5">
+            <div class="flex items-center justify-between text-xs mb-1.5">
+              <div class="flex items-center gap-1.5">
+                <span class="font-semibold text-slate-700">Auto-Flush Turbidity Threshold</span>
+                <span class="vpin-badge">V2</span>
+              </div>
+              <span class="font-mono font-bold text-teal-700"><span id="threshold-display">15.0</span> NTU Limit</span>
+            </div>
+            <input id="turbidity-threshold-slider" type="range" min="5" max="30" step="0.5" value="15"
+              oninput="updateTurbidityThreshold(this.value)"
+              class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600" />
+            <div class="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
+              <span>5.0 NTU (Strict)</span>
+              <span>15.0 NTU (Default)</span>
+              <span>30.0 NTU (Lenient)</span>
+            </div>
+          </div>
+
+          <!-- Eye-Safety Optical Interlock Status Banner (V4) -->
+          <div id="interlock-card" class="mt-4 rounded-2xl border p-4 transition-all duration-300 bg-emerald-50/80 border-emerald-200">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-start gap-3">
+                <div id="interlock-icon-box" class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <!-- Shield / UV-C Safe Icon -->
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <div>
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Eye-Safety Optical Interlock</span>
+                    <span class="vpin-badge vpin-badge-teal">V4</span>
+                  </div>
+                  <div id="interlock-status-text" class="text-sm font-extrabold text-emerald-900 mt-0.5">
+                    UV-C Sterilizing
+                  </div>
+                  <p id="interlock-sub-text" class="text-xs text-emerald-700 mt-0.5">
+                    Zone clear (&gt;30 cm) • UV-C Relay ON • Fountain Pump Normal (45% PWM)
+                  </p>
+                </div>
+              </div>
+              <button id="btn-sim-pet" onclick="triggerPetApproachSimulation()" class="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 text-xs font-bold shadow-2xs transition shrink-0">
+                Simulate Pet Approach
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Row: UV-C Lamp Runtime (V5) & Manual Flush / 3-Way Valve (V6) -->
+        <div class="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+          <!-- UV-C Lamp Cumulative Runtime -->
+          <div class="sm:col-span-6 bg-slate-50 border border-slate-200/80 rounded-xl p-3">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-semibold text-slate-600">UV-C Lamp Runtime</span>
+              <span class="vpin-badge">V5</span>
+            </div>
+            <div class="mt-1 flex items-baseline justify-between">
+              <span id="uv-runtime-text" class="text-sm font-extrabold font-mono text-slate-900">148.4 hrs</span>
+              <span class="text-[11px] text-slate-500">/ 2,000 hrs life</span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-200 rounded-full mt-2 overflow-hidden">
+              <div id="uv-runtime-bar" class="h-full bg-teal-600 rounded-full" style="width: 7.4%;"></div>
+            </div>
+          </div>
+
+          <!-- 3-Way Valve State & Manual Flush Button -->
+          <div class="sm:col-span-6 bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-semibold text-slate-600">3-Way Valve</span>
+                <span class="vpin-badge vpin-badge-amber">V6</span>
+              </div>
+              <div id="valve-state-badge" class="mt-1 inline-flex items-center gap-1 text-xs font-bold text-teal-700">
+                ● Drinking (0°)
+              </div>
+            </div>
+            <button id="btn-manual-flush" onclick="triggerManualFlush()" class="px-3.5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-[0.99] text-white text-xs font-bold shadow-xs transition shrink-0">
+              Manual Flush
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------------- -->
+      <!-- CARD 3: SMART PORTION FEEDER (Right 6 Columns)                    -->
+      <!-- ----------------------------------------------------------------- -->
+      <section class="lg:col-span-6 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6 flex flex-col justify-between">
+        <div>
+          <!-- Card Header -->
+          <div class="flex flex-wrap items-start justify-between gap-2 pb-4 border-b border-slate-100">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                <h2 class="text-base sm:text-lg font-bold text-slate-900">Smart Portion Feeder</h2>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Ultrasonic hopper monitor, bowl IR check &amp; 360° servo dispenser</p>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <span class="vpin-badge vpin-badge-indigo">V7 Hopper</span>
+              <span class="vpin-badge vpin-badge-indigo">V8 Bowl IR</span>
+              <span class="vpin-badge">V9–V10</span>
+            </div>
+          </div>
+
+          <!-- Top Gauges: Hopper Food Level (V7) & Bowl IR Obstacle Sensor (V8) -->
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-5">
+            
+            <!-- Hopper Food Level (%) Gauge -->
+            <div class="sm:col-span-6 bg-slate-50/80 border border-slate-200/70 rounded-2xl p-4 flex flex-col justify-between">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-600">Hopper Food Level</span>
+                <span class="vpin-badge vpin-badge-indigo">V7</span>
+              </div>
+              <div class="my-2.5">
+                <div class="flex items-baseline justify-between">
+                  <span id="hopper-level-val" class="text-3xl font-extrabold text-slate-900">76%</span>
+                  <span id="hopper-status-text" class="text-xs font-semibold text-emerald-700">Well Stocked</span>
+                </div>
+                <div class="w-full h-3 bg-slate-200 rounded-full mt-2 overflow-hidden p-0.5">
+                  <div id="hopper-level-bar" class="h-full bg-gradient-to-r from-indigo-500 to-sky-500 rounded-full transition-all duration-500" style="width: 76%;"></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 sim-only">
+                <button onclick="setHopperLevelSim(15)" class="flex-1 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 py-1 px-2 rounded-lg transition">
+                  Test Low (15%)
+                </button>
+                <button onclick="setHopperLevelSim(95)" class="flex-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 py-1 px-2 rounded-lg transition">
+                  Refill 95%
+                </button>
+              </div>
+            </div>
+
+            <!-- Bowl IR Obstacle Sensor Status (V8) -->
+            <div class="sm:col-span-6 bg-slate-50/80 border border-slate-200/70 rounded-2xl p-4 flex flex-col justify-between">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-600">Bowl IR Obstacle Sensor</span>
+                <span class="vpin-badge vpin-badge-indigo">V8</span>
+              </div>
+              <div id="bowl-ir-card" class="my-2 p-2.5 rounded-xl bg-white border border-slate-200 flex items-center gap-3">
+                <div id="bowl-ir-dot" class="w-3.5 h-3.5 rounded-full bg-slate-400 shrink-0"></div>
+                <div>
+                  <div id="bowl-ir-status" class="text-sm font-extrabold text-slate-800">Bowl Empty</div>
+                  <div id="bowl-ir-sub" class="text-[11px] text-slate-500">IR Beam Clear • Ready to dispense</div>
+                </div>
+              </div>
+              <div class="flex items-center justify-between gap-1.5 sim-only">
+                <button onclick="toggleBowlFoodSim()" class="flex-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 py-1 px-2 rounded-lg transition">
+                  Toggle Bowl State
+                </button>
+                <label class="inline-flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer select-none px-1.5" title="Simulate kibble jam so bowl stays empty after dispensing">
+                  <input id="sim-feeder-jam" type="checkbox" class="rounded text-rose-600 focus:ring-rose-500" />
+                  <span>Sim Jam</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Portion Size / 360-Servo Duration Selector (V9) & Manual Feed (V10) -->
+          <div class="mt-4 bg-slate-50/80 border border-slate-200/70 rounded-2xl p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-semibold text-slate-700">360° Servo Portion Duration</span>
+                <span class="vpin-badge">V9</span>
+              </div>
+              <span id="servo-motor-status" class="text-[11px] font-mono font-semibold text-slate-500">Servo: Idle (90 PWM Stop)</span>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <!-- Portion Duration Segmented Selector -->
+              <div class="grid grid-cols-3 gap-1.5 flex-1 bg-white p-1 rounded-xl border border-slate-200">
+                <button type="button" onclick="selectPortion(1500)" data-portion="1500" class="portion-btn py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition text-center">
+                  Small <span class="block text-[10px] font-mono opacity-75">1.5s (~30g)</span>
+                </button>
+                <button type="button" onclick="selectPortion(2500)" data-portion="2500" class="portion-btn py-1.5 px-2 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-2xs transition text-center">
+                  Medium <span class="block text-[10px] font-mono opacity-90">2.5s (~55g)</span>
+                </button>
+                <button type="button" onclick="selectPortion(3500)" data-portion="3500" class="portion-btn py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition text-center">
+                  Large <span class="block text-[10px] font-mono opacity-75">3.5s (~80g)</span>
+                </button>
+              </div>
+
+              <!-- Manual Feed Action Button (V10) -->
+              <button id="btn-manual-feed" onclick="triggerManualFeed('Manual App')" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5 shrink-0">
+                <span>Manual Feed</span>
+                <span class="font-mono text-[10px] bg-indigo-500/80 px-1.5 py-0.5 rounded">V10</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feeding Schedule List with Add / Toggle Times -->
+        <div class="mt-4 pt-4 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">NTP Automated Feeding Schedule</span>
+            <button onclick="toggleAddScheduleForm()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+              <span>+ Add Schedule</span>
+            </button>
+          </div>
+
+          <!-- Inline Add Schedule Form (Hidden by default) -->
+          <div id="add-schedule-form" class="hidden mb-2.5 p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200 flex flex-wrap items-center gap-2">
+            <input id="new-sched-time" type="time" value="12:30" class="px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg" />
+            <select id="new-sched-portion" class="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg">
+              <option value="1500">Small (1.5s)</option>
+              <option value="2500" selected>Medium (2.5s)</option>
+              <option value="3500">Large (3.5s)</option>
+            </select>
+            <button onclick="addFeedingSchedule()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition">
+              Save
+            </button>
+            <button onclick="toggleAddScheduleForm()" class="px-2.5 py-1.5 text-xs text-slate-600 hover:text-slate-900">
+              Cancel
+            </button>
+          </div>
+
+          <!-- Schedule Items Container -->
+          <div id="schedule-list" class="space-y-2 max-h-36 overflow-y-auto thin-scroll pr-1"></div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------------- -->
+      <!-- CARD 4: ESP32-CAM MONITORING CARD (Bottom-Left 5 Columns)         -->
+      <!-- ----------------------------------------------------------------- -->
+      <section class="lg:col-span-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6 flex flex-col justify-between">
+        <div>
+          <!-- Card Header -->
+          <div class="flex items-start justify-between gap-2 pb-4 border-b border-slate-100">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <h2 class="text-base sm:text-lg font-bold text-slate-900">ESP32-CAM Monitoring</h2>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">OV2640 live station feed &amp; event-triggered snapshots</p>
+            </div>
+            <span class="vpin-badge vpin-badge-teal">V11 Trigger</span>
+          </div>
+
+          <!-- Configurable Stream / Snapshot URL Input -->
+          <div class="mt-4">
+            <label for="cam-stream-url" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              ESP32-CAM Stream / Snapshot Endpoint
+            </label>
+            <div class="flex items-center gap-2">
+              <input id="cam-stream-url" type="text" value="http://192.168.1.50:81/stream"
+                class="flex-1 min-w-0 px-3 py-1.5 text-xs font-mono bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              <button onclick="applyCameraUrl()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl transition shrink-0">
+                Connect
+              </button>
+            </div>
+          </div>
+
+          <!-- Camera Viewport with Live Status Overlay -->
+          <div class="mt-3.5 relative rounded-2xl overflow-hidden border border-slate-300 bg-slate-900 aspect-video shadow-inner">
+            <!-- Simulated Live OV2640 Station Canvas -->
+            <canvas id="esp32-cam-canvas" width="640" height="360" class="w-full h-full object-cover block"></canvas>
+            
+            <!-- Live MJPEG Stream Img (shown only when user connects an external IP stream) -->
+            <img id="esp32-cam-live-img" alt="ESP32-CAM Live Stream" class="hidden w-full h-full object-cover" onerror="handleLiveStreamError()" />
+
+            <!-- Camera Shutter Flash Overlay -->
+            <div id="cam-shutter-flash" class="pointer-events-none absolute inset-0 bg-white opacity-0"></div>
+
+            <!-- Top HUD Overlay -->
+            <div class="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+              <span id="cam-live-pill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/75 backdrop-blur-xs text-white text-[11px] font-mono font-semibold">
+                <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                LIVE • OV2640 SIM
+              </span>
+              <span id="cam-clock-overlay" class="px-2 py-1 rounded-lg bg-slate-950/70 text-slate-200 text-[10px] font-mono">
+                14:10:00
+              </span>
+            </div>
+
+            <!-- Bottom HUD Overlay + Capture Snapshot Button -->
+            <div class="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2">
+              <span id="cam-zone-overlay" class="px-2.5 py-1 rounded-lg bg-slate-950/75 backdrop-blur-xs text-emerald-300 text-[11px] font-mono truncate">
+                Zone Clear • UV-C Active
+              </span>
+              <button onclick="captureCameraSnapshot('Manual Capture')" class="px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition flex items-center gap-1.5 shrink-0 cursor-pointer">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+                <span>Capture Snapshot</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Event Snapshots Strip (Pet Approach & Feeding Events) -->
+        <div class="mt-4 pt-3 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Recent Event Snapshots</span>
+            <span id="snapshot-count-label" class="text-[11px] font-mono text-slate-400">3 saved</span>
+          </div>
+          <div id="snapshots-strip" class="grid grid-cols-3 gap-2"></div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------------- -->
+      <!-- CARD 5: HYDRATION & FEEDING ANALYTICS + MOBILE PUSH ALERTS (7 Cols)-->
+      <!-- ----------------------------------------------------------------- -->
+      <section class="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6 flex flex-col justify-between">
+        <div>
+          <!-- Card Header -->
+          <div class="flex flex-wrap items-start justify-between gap-2 pb-4 border-b border-slate-100">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                <h2 class="text-base sm:text-lg font-bold text-slate-900">Hydration &amp; Feeding Analytics + Push Alerts</h2>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Daily pet visit telemetry, drinking duration &amp; Blynk mobile alerts</p>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <span class="vpin-badge vpin-badge-teal">V12 Visits</span>
+              <span class="vpin-badge vpin-badge-teal">V13 Duration</span>
+              <span class="vpin-badge vpin-badge-amber">V14 Alerts</span>
+            </div>
+          </div>
+
+          <!-- Top Analytics Row: Daily Pet Visits + Drinking Duration Bar Chart -->
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-4">
+            
+            <!-- Daily Pet Visits & Summary KPIs -->
+            <div class="sm:col-span-4 flex flex-col gap-3">
+              <div class="bg-teal-50/70 border border-teal-200/80 rounded-2xl p-3.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-teal-900">Daily Pet Visits</span>
+                  <span class="vpin-badge vpin-badge-teal">V12</span>
+                </div>
+                <div class="mt-1 flex items-baseline gap-2">
+                  <span id="daily-visits-val" class="text-3xl font-extrabold text-teal-950">8</span>
+                  <span class="text-xs font-semibold text-teal-700">visits today</span>
+                </div>
+                <p class="text-[11px] text-teal-700/80 mt-1">Ultrasonic &le;30cm triggers</p>
+              </div>
+
+              <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-slate-700">Drinking Duration</span>
+                  <span class="vpin-badge">V13</span>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span id="drinking-duration-val" class="text-2xl font-extrabold font-mono text-slate-900">214s</span>
+                  <span class="text-xs text-slate-500">(3m 34s)</span>
+                </div>
+                <p id="avg-drink-text" class="text-[11px] text-slate-500 mt-1">Avg 26.8s per visit</p>
+              </div>
+            </div>
+
+            <!-- Drinking Duration Bar Chart -->
+            <div class="sm:col-span-8 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between">
+              <div class="flex items-center justify-between mb-2">
+                <div>
+                  <span class="text-xs font-bold text-slate-800">Hourly Drinking Duration (Seconds)</span>
+                  <span class="block text-[11px] text-slate-500">Hydration activity tracked via ultrasonic presence</span>
+                </div>
+                <span class="text-[11px] font-mono text-teal-700 font-semibold">Today</span>
+              </div>
+              <div id="drinking-bar-chart" class="h-32 flex items-end justify-between gap-2 pt-4 px-1 border-b border-slate-200"></div>
+              <div id="drinking-bar-labels" class="flex items-center justify-between gap-2 px-1 pt-1.5 text-[10px] font-mono text-slate-500"></div>
+            </div>
+          </div>
+
+          <!-- Mobile Push Notification Center (The 5 PawSense Alerts) -->
+          <div class="mt-4 bg-slate-50 border border-slate-200/90 rounded-2xl p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Mobile Push Notification Center</span>
+                <span class="vpin-badge vpin-badge-amber">V14</span>
+                <span id="active-alert-count" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700">0 Active</span>
+              </div>
+              <button onclick="clearAllAlerts()" class="text-[11px] font-semibold text-slate-500 hover:text-slate-800">
+                Clear All
+              </button>
+            </div>
+
+            <!-- Simulator Test-Trigger Buttons for the 5 PawSense Alerts -->
+            <div class="sim-only mb-3">
+              <p class="text-[11px] text-slate-500 mb-1.5 font-medium">Test-Trigger PawSense Mobile Push Alerts:</p>
+              <div class="flex flex-wrap gap-1.5">
+                <button onclick="triggerPushAlert('REFILL CLEAN WATER')" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 transition">
+                  + REFILL CLEAN WATER
+                </button>
+                <button onclick="triggerPushAlert('HIGH TURBIDITY DETECTED')" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-white hover:bg-rose-50 text-rose-800 border border-rose-300 transition">
+                  + HIGH TURBIDITY DETECTED
+                </button>
+                <button onclick="triggerPushAlert('REFILL FOOD')" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 transition">
+                  + REFILL FOOD
+                </button>
+                <button onclick="triggerPushAlert('FOOD NOT DISPENSED')" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-white hover:bg-rose-50 text-rose-800 border border-rose-300 transition">
+                  + FOOD NOT DISPENSED
+                </button>
+                <button onclick="triggerPushAlert('PET HAS NOT EATEN')" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-300 transition">
+                  + PET HAS NOT EATEN
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Alert Feed -->
+            <div id="push-alerts-feed" class="space-y-2 max-h-36 overflow-y-auto thin-scroll pr-1"></div>
+          </div>
+        </div>
+
+        <!-- Feeding Logs Section -->
+        <div class="mt-4 pt-3 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Recent Feeding Logs</span>
+            <span class="text-[11px] text-slate-400">IR Bowl Verification</span>
+          </div>
+          <div id="feeding-logs-list" class="space-y-1.5 max-h-28 overflow-y-auto thin-scroll pr-1"></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- VIEW 2: MOBILE COMPANION PREVIEW (Blynk Mobile App Integration)     -->
+    <!-- =================================================================== -->
+    <div id="mobile-preview-view" class="hidden">
+      <div class="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 py-2">
+        
+        <!-- Realistic Mobile Device Frame (390px wide) -->
+        <div class="w-full max-w-[395px] bg-slate-900 rounded-[3rem] p-3 shadow-2xl border-4 border-slate-800 relative shrink-0">
+          <!-- Top Dynamic Island / Speaker Notch -->
+          <div class="w-28 h-6 bg-slate-950 rounded-full mx-auto mb-2 flex items-center justify-end px-3">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-800 border border-slate-700"></span>
+          </div>
+
+          <!-- Inner Phone Screen -->
+          <div class="bg-slate-50 rounded-[2.25rem] overflow-hidden flex flex-col h-[720px] relative border border-slate-700/40">
+            
+            <!-- Mobile Status Bar -->
+            <div class="px-6 pt-2.5 pb-2 bg-white flex items-center justify-between text-[11px] font-bold text-slate-800">
+              <span id="mobile-status-time">9:41</span>
+              <span class="text-[10px] font-mono text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">Blynk IoT Connected</span>
+              <div class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21l-12-18h24z"/></svg>
+                <div class="w-5 h-2.5 border border-slate-800 rounded-xs p-0.5 flex items-center">
+                  <div class="w-full h-full bg-emerald-500 rounded-2xs"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mobile Push Notification Drop-Down Banner (Appears when an alert triggers) -->
+            <div id="mobile-push-banner" class="hidden absolute top-10 left-3 right-3 z-30 bg-slate-900/95 backdrop-blur-md text-white p-3.5 rounded-2xl shadow-xl border border-slate-700 animate-push">
+              <div class="flex items-start gap-2.5">
+                <div class="w-8 h-8 rounded-xl bg-teal-500 flex items-center justify-center text-slate-950 font-extrabold text-xs shrink-0">
+                  PS
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center justify-between">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-teal-300">PawSense • Blynk Alert</span>
+                    <span class="text-[10px] text-slate-400">now</span>
+                  </div>
+                  <div id="mobile-banner-title" class="text-xs font-extrabold text-white mt-0.5 truncate">HIGH TURBIDITY DETECTED</div>
+                  <p id="mobile-banner-body" class="text-[11px] text-slate-300 mt-0.5 leading-snug">Automated 3-way valve flush initiated.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mobile App Header -->
+            <div class="px-5 py-3 bg-white border-b border-slate-200/80 flex items-center justify-between">
+              <div>
+                <h2 class="text-base font-extrabold text-slate-900">PawSense Station</h2>
+                <p class="text-[11px] text-slate-500">UE CPE-1 Prototype • Living Room</p>
+              </div>
+              <span id="mobile-alert-pill" onclick="switchMobileTab('alerts')" class="cursor-pointer px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                All Clear
+              </span>
+            </div>
+
+            <!-- Mobile Scrollable Tab Content -->
+            <div class="flex-1 overflow-y-auto thin-scroll p-4 space-y-3.5">
+              
+              <!-- MOBILE TAB 1: HOME OVERVIEW -->
+              <div id="mobile-tab-home" class="space-y-3.5">
+                <!-- Safety Interlock Banner -->
+                <div id="mobile-interlock-box" class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                  <div>
+                    <div class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Optical Interlock (V4)</div>
+                    <div id="mobile-interlock-title" class="text-sm font-extrabold text-emerald-950 mt-0.5">UV-C Sterilizing</div>
+                    <div id="mobile-interlock-sub" class="text-[11px] text-emerald-700">Zone clear (&gt;30cm)</div>
+                  </div>
+                  <span class="vpin-badge vpin-badge-teal">V4</span>
+                </div>
+
+                <!-- Purity & Levels Summary Cards -->
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+                    <div class="flex items-center justify-between">
+                      <span class="text-[11px] font-semibold text-slate-500">Water Purity</span>
+                      <span class="vpin-badge vpin-badge-teal">V0</span>
+                    </div>
+                    <div id="mobile-purity-val" class="text-2xl font-extrabold text-teal-700 mt-1">94%</div>
+                    <div id="mobile-ntu-val" class="text-[11px] font-mono text-slate-500 mt-0.5">2.4 NTU</div>
+                  </div>
+
+                  <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+                    <div class="flex items-center justify-between">
+                      <span class="text-[11px] font-semibold text-slate-500">Hopper Food</span>
+                      <span class="vpin-badge vpin-badge-indigo">V7</span>
+                    </div>
+                    <div id="mobile-hopper-val" class="text-2xl font-extrabold text-indigo-700 mt-1">76%</div>
+                    <div id="mobile-bowl-val" class="text-[11px] font-semibold text-slate-500 mt-0.5">Bowl: Empty</div>
+                  </div>
+                </div>
+
+                <!-- Reservoir & UV Runtime Strip -->
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-2.5">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-semibold text-slate-600">500 mL Clean Reservoir (V3)</span>
+                    <span id="mobile-reservoir-val" class="font-bold text-emerald-700">430 mL • OK</span>
+                  </div>
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-semibold text-slate-600">3-Way Flush Valve (V6)</span>
+                    <span id="mobile-valve-val" class="font-bold text-teal-700">Drinking (0°)</span>
+                  </div>
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-semibold text-slate-600">UV-C Lamp Runtime (V5)</span>
+                    <span id="mobile-uv-val" class="font-mono font-bold text-slate-800">148.4 hrs</span>
+                  </div>
+                </div>
+
+                <!-- Quick Remote Actions -->
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <div class="text-xs font-bold text-slate-800 mb-2.5">Remote Station Controls</div>
+                  <div class="grid grid-cols-2 gap-2.5">
+                    <button onclick="triggerManualFeed('Mobile App')" class="py-3 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition flex flex-col items-center gap-1">
+                      <span>Manual Feed</span>
+                      <span class="text-[10px] font-mono opacity-80">Trigger V10</span>
+                    </button>
+                    <button onclick="triggerManualFlush()" class="py-3 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-xs transition flex flex-col items-center gap-1">
+                      <span>Manual Flush</span>
+                      <span class="text-[10px] font-mono opacity-80">Trigger V6</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Daily Hydration Mini Summary -->
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between">
+                  <div>
+                    <div class="text-[11px] font-semibold text-slate-500">Today's Hydration (V12 / V13)</div>
+                    <div class="text-sm font-extrabold text-slate-900 mt-0.5">
+                      <span id="mobile-visits-val">8</span> Visits • <span id="mobile-duration-val">214s</span> Total
+                    </div>
+                  </div>
+                  <button onclick="switchMobileTab('alerts')" class="text-xs font-bold text-teal-700">Details &rarr;</button>
+                </div>
+              </div>
+
+              <!-- MOBILE TAB 2: CAMERA VIEW -->
+              <div id="mobile-tab-camera" class="hidden space-y-3">
+                <div class="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-slate-800">ESP32-CAM Live Feed</span>
+                    <span class="vpin-badge vpin-badge-teal">V11</span>
+                  </div>
+                  <div class="relative rounded-xl overflow-hidden bg-slate-900 aspect-video">
+                    <canvas id="mobile-cam-mirror" width="640" height="360" class="w-full h-full object-cover block"></canvas>
+                    <span class="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-950/75 text-white text-[10px] font-mono">● LIVE</span>
+                  </div>
+                  <button onclick="captureCameraSnapshot('Mobile Snapshot')" class="mt-3 w-full py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition">
+                    Capture Snapshot Now
+                  </button>
+                </div>
+                <div class="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <div class="text-xs font-bold text-slate-800 mb-2">Recent Mobile Snapshots</div>
+                  <div id="mobile-snapshots-list" class="space-y-2"></div>
+                </div>
+              </div>
+
+              <!-- MOBILE TAB 3: FEEDING SCHEDULE -->
+              <div id="mobile-tab-schedule" class="hidden space-y-3">
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <div class="text-xs font-bold text-slate-800 mb-2">Portion Size (V9)</div>
+                  <div class="grid grid-cols-3 gap-1.5">
+                    <button onclick="selectPortion(1500)" class="py-2 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-indigo-50">Small (1.5s)</button>
+                    <button onclick="selectPortion(2500)" class="py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 text-xs font-bold">Med (2.5s)</button>
+                    <button onclick="selectPortion(3500)" class="py-2 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-indigo-50">Large (3.5s)</button>
+                  </div>
+                </div>
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <div class="text-xs font-bold text-slate-800 mb-2">Scheduled Feedings</div>
+                  <div id="mobile-schedule-list" class="space-y-2"></div>
+                </div>
+              </div>
+
+              <!-- MOBILE TAB 4: ALERTS & LOGS -->
+              <div id="mobile-tab-alerts" class="hidden space-y-3">
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-slate-800">Push Alerts (V14)</span>
+                    <button onclick="clearAllAlerts()" class="text-[11px] font-semibold text-teal-700">Clear</button>
+                  </div>
+                  <div id="mobile-alerts-list" class="space-y-2"></div>
+                </div>
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <div class="text-xs font-bold text-slate-800 mb-2">Feeding Logs</div>
+                  <div id="mobile-logs-list" class="space-y-1.5"></div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Mobile Bottom Tab Bar -->
+            <nav class="bg-white border-t border-slate-200 px-3 py-2 grid grid-cols-4 gap-1">
+              <button onclick="switchMobileTab('home')" data-mtab="home" class="mtab-btn py-1.5 rounded-xl flex flex-col items-center text-teal-700 bg-teal-50 font-bold text-[10px]">
+                <svg class="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                <span>Home</span>
+              </button>
+              <button onclick="switchMobileTab('camera')" data-mtab="camera" class="mtab-btn py-1.5 rounded-xl flex flex-col items-center text-slate-500 hover:text-slate-900 font-semibold text-[10px]">
+                <svg class="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <span>Camera</span>
+              </button>
+              <button onclick="switchMobileTab('schedule')" data-mtab="schedule" class="mtab-btn py-1.5 rounded-xl flex flex-col items-center text-slate-500 hover:text-slate-900 font-semibold text-[10px]">
+                <svg class="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 3"/></svg>
+                <span>Schedule</span>
+              </button>
+              <button onclick="switchMobileTab('alerts')" data-mtab="alerts" class="mtab-btn py-1.5 rounded-xl flex flex-col items-center text-slate-500 hover:text-slate-900 font-semibold text-[10px]">
+                <svg class="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                <span>Alerts</span>
+              </button>
+            </nav>
+
+          </div>
+        </div>
+
+        <!-- Companion Simulator Control Panel Beside Mobile Frame -->
+        <div class="max-w-md w-full bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
+          <div>
+            <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+              Live Sync Sandbox
+            </span>
+            <h3 class="text-lg font-extrabold text-slate-900 mt-2">Mobile Companion Integration Testbench</h3>
+            <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+              Trigger physical hardware events on the PawSense prototype below and observe real-time Blynk Virtual Pin updates and mobile push notifications on the companion app screen.
+            </p>
+          </div>
+
+          <div class="space-y-2.5">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-500">1. Hardware Sensor Events</div>
+            <button onclick="triggerPetApproachSimulation()" class="w-full py-2.5 px-4 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs text-left flex items-center justify-between transition">
+              <span>Simulate Pet Approach (&le;30cm)</span>
+              <span class="font-mono text-[11px]">V4 &rarr; 1</span>
+            </button>
+            <button onclick="simulateHighTurbidity()" class="w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300 font-bold text-xs text-left flex items-center justify-between transition">
+              <span>Simulate High Water Turbidity</span>
+              <span class="font-mono text-[11px]">V1 &gt; V2</span>
+            </button>
+            <button onclick="toggleBowlFoodSim()" class="w-full py-2.5 px-4 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs text-left flex items-center justify-between transition">
+              <span>Toggle Bowl IR Sensor (Empty / Food)</span>
+              <span class="font-mono text-[11px]">V8</span>
+            </button>
+          </div>
+
+          <div class="space-y-2.5">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-500">2. Trigger Any of the 5 Mobile Push Alerts</div>
+            <div class="grid grid-cols-1 gap-1.5">
+              <button onclick="triggerPushAlert('REFILL CLEAN WATER')" class="py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-mono font-semibold text-slate-800 text-left flex items-center justify-between">
+                <span>REFILL CLEAN WATER</span>
+                <span class="text-teal-600 font-sans font-bold">Push &rarr;</span>
+              </button>
+              <button onclick="triggerPushAlert('HIGH TURBIDITY DETECTED')" class="py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-mono font-semibold text-slate-800 text-left flex items-center justify-between">
+                <span>HIGH TURBIDITY DETECTED</span>
+                <span class="text-teal-600 font-sans font-bold">Push &rarr;</span>
+              </button>
+              <button onclick="triggerPushAlert('REFILL FOOD')" class="py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-mono font-semibold text-slate-800 text-left flex items-center justify-between">
+                <span>REFILL FOOD</span>
+                <span class="text-teal-600 font-sans font-bold">Push &rarr;</span>
+              </button>
+              <button onclick="triggerPushAlert('FOOD NOT DISPENSED')" class="py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-mono font-semibold text-slate-800 text-left flex items-center justify-between">
+                <span>FOOD NOT DISPENSED</span>
+                <span class="text-teal-600 font-sans font-bold">Push &rarr;</span>
+              </button>
+              <button onclick="triggerPushAlert('PET HAS NOT EATEN')" class="py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-mono font-semibold text-slate-800 text-left flex items-center justify-between">
+                <span>PET HAS NOT EATEN</span>
+                <span class="text-teal-600 font-sans font-bold">Push &rarr;</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- FOOTER                                                                -->
+  <!-- ===================================================================== -->
+  <footer class="border-t border-slate-200 bg-white py-4 px-4 sm:px-6 lg:px-8 mt-8">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+      <div>
+        <span class="font-bold text-slate-700">PawSense</span> — University of the East • Dept. of Computer Engineering (NCP 3101)
+      </div>
+      <div class="font-mono text-[11px] text-slate-400">
+        ESP32 + ESP32-CAM + Blynk IoT Cloud REST API Ready
+      </div>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- JAVASCRIPT LOGIC: STATE, SIMULATOR, BLYNK REST API & LIVE CAM CANVAS  -->
+  <!-- ===================================================================== -->
+  <script>
+    // -----------------------------------------------------------------------
+    // 1. CENTRALIZED PAWSENSE STATE & VIRTUAL PIN DEFINITIONS (V0 - V14)
+    // -----------------------------------------------------------------------
+    const VPIN_DEFINITIONS = [
+      { pin: 'V0', name: 'Water Purity Index', hw: 'Calculated from Turbidity ADC', type: 'Float (0 – 100 %)' },
+      { pin: 'V1', name: 'Water Turbidity', hw: 'Turbidity Sensor (Analog ADC)', type: 'Float (0.0 – 50.0 NTU)' },
+      { pin: 'V2', name: 'Purity Threshold Limit', hw: 'App Slider -> ESP32 EEPROM', type: 'Float (5.0 – 30.0 NTU)' },
+      { pin: 'V3', name: 'Clean Water Reservoir', hw: 'Float Switch (Digital GPIO)', type: 'Int (1 = OK / 500mL, 0 = Low)' },
+      { pin: 'V4', name: 'Eye-Safety Interlock', hw: 'Ultrasonic Pet Sensor (<=30cm)', type: 'Int (0 = Clear/UV ON, 1 = Pet/UV OFF)' },
+      { pin: 'V5', name: 'UV-C Lamp Runtime', hw: 'ESP32 Cumulative Timer', type: 'Float (Hours / 2000h max)' },
+      { pin: 'V6', name: 'Manual Flush & 3-Way Valve', hw: '180° Servo + 5V Pump PWM', type: 'Int (0 = Drink 0°, 1 = Drain 90°)' },
+      { pin: 'V7', name: 'Hopper Food Level', hw: 'Ultrasonic Hopper Sensor', type: 'Int (0 – 100 %)' },
+      { pin: 'V8', name: 'Bowl IR Obstacle Sensor', hw: 'IR Obstacle Module (Digital)', type: 'Int (0 = Empty, 1 = Food Present)' },
+      { pin: 'V9', name: 'Portion Run Duration', hw: '360° Servo Dispense Time', type: 'Int (1500 / 2500 / 3500 ms)' },
+      { pin: 'V10', name: 'Manual Feed Trigger', hw: '360° Continuous Servo PWM', type: 'Int (1 = Dispense Portion)' },
+      { pin: 'V11', name: 'Camera Capture Trigger', hw: 'ESP32 -> ESP32-CAM GPIO', type: 'Int (1 = Capture Snapshot)' },
+      { pin: 'V12', name: 'Daily Pet Visits', hw: 'Ultrasonic Visit Counter', type: 'Int (Count)' },
+      { pin: 'V13', name: 'Daily Drinking Duration', hw: 'Ultrasonic Presence Timer', type: 'Int (Seconds)' },
+      { pin: 'V14', name: 'Active Alert Status', hw: 'Blynk Push Event / Log', type: 'String (Alert Code)' },
+    ];
+
+    const state = {
+      viewMode: 'web',             // 'web' | 'mobile'
+      connectionMode: 'simulator', // 'simulator' | 'blynk'
+      blynkConnected: false,
+      blynkTimer: null,
+
+      // Telemetry mapped to V0 - V14
+      v0_purity: 94,               // %
+      v1_turbidity: 2.4,           // NTU
+      v2_threshold: 15.0,          // NTU
+      v3_reservoirOk: true,        // true = 430mL OK, false = Low (<100mL)
+      reservoirMl: 430,            // mL out of 500mL
+      v4_petDetected: false,       // true = Pet within 30cm (UV-C OFF, Pump Ramped)
+      v5_uvRuntime: 148.4,         // hours
+      v6_flushing: false,          // true = 3-way valve at 90° drain
+      v7_hopperLevel: 76,          // %
+      v8_bowlHasFood: false,       // false = Empty, true = Food detected
+      v9_portionMs: 2500,          // 1500, 2500, or 3500 ms
+      v10_feeding: false,          // true while 360 servo is spinning
+      v12_dailyVisits: 8,          // count
+      v13_drinkingSec: 214,        // seconds
+      v14_lastAlert: 'NONE',
+
+      // Camera & Analytics Collections
+      camUrl: 'http://192.168.1.50:81/stream',
+      usingLiveStreamImg: false,
+      snapshots: [],
+      schedules: [
+        { id: 1, time: '07:30', portionMs: 2500, enabled: true },
+        { id: 2, time: '13:00', portionMs: 1500, enabled: true },
+        { id: 3, time: '18:30', portionMs: 2500, enabled: true },
+      ],
+      feedingLogs: [
+        { time: '07:30 AM', trigger: 'Scheduled NTP', portion: '2.5s (Med)', status: 'Verified in Bowl', ok: true },
+        { time: '01:00 PM', trigger: 'Scheduled NTP', portion: '1.5s (Small)', status: 'Verified in Bowl', ok: true },
+      ],
+      hourlyDrinking: [
+        { label: '08h', sec: 38 },
+        { label: '10h', sec: 24 },
+        { label: '12h', sec: 52 },
+        { label: '14h', sec: 41 },
+        { label: '16h', sec: 29 },
+        { label: '18h', sec: 30 },
+        { label: '20h', sec: 0 },
+      ],
+      alerts: [],
+      petAnimProgress: 0,
+    };
+
+    // -----------------------------------------------------------------------
+    // 2. INITIALIZATION
+    // -----------------------------------------------------------------------
+    window.addEventListener('DOMContentLoaded', () => {
+      populateVpinTable();
+      renderSchedules();
+      renderFeedingLogs();
+      renderDrinkingChart();
+      renderAlerts();
+      updateAllUI();
+      startCameraCanvasLoop();
+      seedInitialSnapshots();
+      startAmbientSimulatorTick();
+    });
+
+    // -----------------------------------------------------------------------
+    // 3. VIEW MODE & CONNECTION MODE SWITCHING
+    // -----------------------------------------------------------------------
+    function setViewMode(mode) {
+      state.viewMode = mode;
+      const webEl = document.getElementById('web-dashboard-view');
+      const mobEl = document.getElementById('mobile-preview-view');
+      const btnWeb = document.getElementById('btn-view-web');
+      const btnMob = document.getElementById('btn-view-mobile');
+
+      if (mode === 'web') {
+        webEl.classList.remove('hidden');
+        mobEl.classList.add('hidden');
+        btnWeb.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-white text-slate-900 shadow-2xs';
+        btnMob.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+      } else {
+        webEl.classList.add('hidden');
+        mobEl.classList.remove('hidden');
+        btnMob.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-white text-slate-900 shadow-2xs';
+        btnWeb.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+      }
+      updateAllUI();
+    }
+
+    function setConnectionMode(mode) {
+      state.connectionMode = mode;
+      const configBar = document.getElementById('blynk-config-bar');
+      const btnSim = document.getElementById('btn-conn-sim');
+      const btnBlynk = document.getElementById('btn-conn-blynk');
+      const simOnlyEls = document.querySelectorAll('.sim-only');
+
+      if (mode === 'simulator') {
+        stopBlynkPolling();
+        configBar.classList.add('hidden');
+        btnSim.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-teal-600 text-white shadow-2xs';
+        btnBlynk.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+        simOnlyEls.forEach(el => el.classList.remove('opacity-40', 'pointer-events-none'));
+        showToast('Switched to Interactive Hardware Simulator', 'teal');
+      } else {
+        configBar.classList.remove('hidden');
+        btnBlynk.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-teal-600 text-white shadow-2xs';
+        btnSim.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+        showToast('Blynk Cloud REST API mode active. Enter Auth Token to sync.', 'indigo');
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. BLYNK CLOUD REST API INTEGRATION (/external/api/get & /update)
+    // -----------------------------------------------------------------------
+    function toggleBlynkPolling() {
+      if (state.blynkConnected) {
+        stopBlynkPolling();
+        return;
+      }
+      const token = document.getElementById('blynk-auth-token').value.trim();
+      if (!token) {
+        showToast('Please enter your 32-character Blynk Device Auth Token first.', 'amber');
+        return;
+      }
+      state.blynkConnected = true;
+      const btn = document.getElementById('btn-blynk-connect');
+      btn.textContent = 'Disconnect';
+      btn.classList.replace('bg-teal-600', 'bg-rose-600');
+      btn.classList.replace('hover:bg-teal-700', 'hover:bg-rose-700');
+
+      const intervalMs = parseInt(document.getElementById('blynk-poll-rate').value, 10) || 5000;
+      fetchBlynkDatastreams();
+      state.blynkTimer = setInterval(fetchBlynkDatastreams, intervalMs);
+    }
+
+    function stopBlynkPolling() {
+      state.blynkConnected = false;
+      if (state.blynkTimer) {
+        clearInterval(state.blynkTimer);
+        state.blynkTimer = null;
+      }
+      const btn = document.getElementById('btn-blynk-connect');
+      if (btn) {
+        btn.textContent = 'Connect & Sync';
+        btn.classList.replace('bg-rose-600', 'bg-teal-600');
+        btn.classList.replace('hover:bg-rose-700', 'hover:bg-teal-700');
+      }
+      const statusEl = document.getElementById('blynk-api-status');
+      if (statusEl) statusEl.textContent = 'Status: Disconnected';
+    }
+
+    async function fetchBlynkDatastreams() {
+      const server = document.getElementById('blynk-server-url').value.trim().replace(/\/$/, '');
+      const token = document.getElementById('blynk-auth-token').value.trim();
+      const statusEl = document.getElementById('blynk-api-status');
+      const url = `${server}/external/api/get?token=${encodeURIComponent(token)}&v0&v1&v2&v3&v4&v5&v6&v7&v8&v9&v12&v13&v14`;
+
+      try {
+        statusEl.textContent = `Polling GET ${server}/external/api/get ...`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} — Check Auth Token or device online status`);
+        }
+        const data = await response.json();
+
+        // Map returned Blynk datastreams into local state
+        if (data.v0 !== undefined) state.v0_purity = Number(data.v0);
+        if (data.v1 !== undefined) state.v1_turbidity = Number(data.v1);
+        if (data.v2 !== undefined) state.v2_threshold = Number(data.v2);
+        if (data.v3 !== undefined) {
+          state.v3_reservoirOk = Number(data.v3) === 1;
+          state.reservoirMl = state.v3_reservoirOk ? 430 : 80;
+        }
+        if (data.v4 !== undefined) state.v4_petDetected = Number(data.v4) === 1;
+        if (data.v5 !== undefined) state.v5_uvRuntime = Number(data.v5);
+        if (data.v6 !== undefined) state.v6_flushing = Number(data.v6) === 1;
+        if (data.v7 !== undefined) state.v7_hopperLevel = Number(data.v7);
+        if (data.v8 !== undefined) state.v8_bowlHasFood = Number(data.v8) === 1;
+        if (data.v9 !== undefined) state.v9_portionMs = Number(data.v9);
+        if (data.v12 !== undefined) state.v12_dailyVisits = Number(data.v12);
+        if (data.v13 !== undefined) state.v13_drinkingSec = Number(data.v13);
+
+        statusEl.textContent = `Connected • Last Sync ${new Date().toLocaleTimeString()} (HTTP 200 OK)`;
+        updateAllUI();
+      } catch (err) {
+        statusEl.textContent = `API Error: ${err.message}`;
+      }
+    }
+
+    async function sendBlynkUpdate(vPin, value) {
+      if (state.connectionMode !== 'blynk' || !state.blynkConnected) return;
+      const server = document.getElementById('blynk-server-url').value.trim().replace(/\/$/, '');
+      const token = document.getElementById('blynk-auth-token').value.trim();
+      const statusEl = document.getElementById('blynk-api-status');
+      const url = `${server}/external/api/update?token=${encodeURIComponent(token)}&${vPin.toLowerCase()}=${encodeURIComponent(value)}`;
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        statusEl.textContent = `Sent ${vPin.toUpperCase()}=${value} • ${new Date().toLocaleTimeString()} (HTTP 200)`;
+      } catch (err) {
+        statusEl.textContent = `Write Failed (${vPin.toUpperCase()}): ${err.message}`;
+        showToast(`Blynk API write error on ${vPin.toUpperCase()}: ${err.message}`, 'rose');
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. WATER HYGIENE, EYE-SAFETY INTERLOCK & AUTOMATED FLUSH ACTIONS
+    // -----------------------------------------------------------------------
+    function updateTurbidityThreshold(val) {
+      state.v2_threshold = parseFloat(val);
+      document.getElementById('threshold-display').textContent = state.v2_threshold.toFixed(1);
+      sendBlynkUpdate('v2', state.v2_threshold);
+      evaluateWaterPurity();
+    }
+
+    function evaluateWaterPurity() {
+      // Convert NTU (0-40 scale) into Water Purity Index %
+      const purity = Math.max(0, Math.min(100, Math.round(100 - (state.v1_turbidity * 2.5))));
+      state.v0_purity = purity;
+      updateAllUI();
+    }
+
+    function simulateHighTurbidity() {
+      state.v1_turbidity = +(state.v2_threshold + 6.4).toFixed(1);
+      evaluateWaterPurity();
+      triggerPushAlert('HIGH TURBIDITY DETECTED');
+      showToast(`Turbidity spiked to ${state.v1_turbidity} NTU! Auto-flushing dirty water...`, 'amber');
+      setTimeout(() => {
+        triggerManualFlush(true);
+      }, 900);
+    }
+
+    function toggleReservoirLow() {
+      state.v3_reservoirOk = !state.v3_reservoirOk;
+      state.reservoirMl = state.v3_reservoirOk ? 450 : 75;
+      if (!state.v3_reservoirOk) {
+        triggerPushAlert('REFILL CLEAN WATER');
+      } else {
+        showToast('Clean-water reservoir refilled to 450 mL (Float Switch OK).', 'teal');
+      }
+      updateAllUI();
+    }
+
+    function triggerPetApproachSimulation() {
+      if (state.v4_petDetected) return;
+
+      // Step 3-5 & 13 of PawSense Working Principle:
+      // Ultrasonic <=30cm -> Cut UV-C Relay -> Ramp Pump PWM -> Capture Snapshot -> Log Visit
+      state.v4_petDetected = true;
+      state.v12_dailyVisits += 1;
+      const sessionDrinkSec = Math.floor(Math.random() * 14) + 16; // 16s - 29s
+      state.v13_drinkingSec += sessionDrinkSec;
+
+      // Add to current hour bar chart
+      const currentBucket = state.hourlyDrinking[state.hourlyDrinking.length - 1];
+      currentBucket.sec += sessionDrinkSec;
+
+      updateAllUI();
+      renderDrinkingChart();
+      captureCameraSnapshot('Pet Approach (≤30cm)');
+      showToast('Pet detected within 30 cm! UV-C Relay CUT & Fountain Pump ramped.', 'amber');
+
+      // Simulate pet drinking for 5.5 seconds then stepping away
+      setTimeout(() => {
+        state.v4_petDetected = false;
+        updateAllUI();
+        showToast(`Pet stepped away (+${sessionDrinkSec}s logged). UV-C Sterilization resumed.`, 'teal');
+      }, 5500);
+    }
+
+    function triggerManualFlush(isAuto = false) {
+      if (state.v6_flushing) return;
+      state.v6_flushing = true;
+      sendBlynkUpdate('v6', 1);
+      updateAllUI();
+
+      const btn = document.getElementById('btn-manual-flush');
+      btn.disabled = true;
+      btn.textContent = 'Flushing (90°)...';
+
+      showToast(
+        isAuto
+          ? 'Automated Flush: 3-Way Valve rotated to Waste Drain (90°).'
+          : 'Manual Flush: 3-Way Valve rotated to Waste Drain (90°).',
+        'teal'
+      );
+
+      // Simulate 3.5s flush cycle
+      setTimeout(() => {
+        state.v6_flushing = false;
+        state.v1_turbidity = 1.8;
+        state.reservoirMl = Math.max(120, state.reservoirMl - 110);
+        if (state.reservoirMl <= 120) {
+          state.v3_reservoirOk = false;
+          triggerPushAlert('REFILL CLEAN WATER');
+        }
+        sendBlynkUpdate('v6', 0);
+        evaluateWaterPurity();
+
+        btn.disabled = false;
+        btn.textContent = 'Manual Flush';
+        showToast('Flush complete! 3-Way Valve returned to Drinking Loop (0°).', 'teal');
+      }, 3500);
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. SMART PORTION FEEDER, BOWL IR & SCHEDULE ACTIONS
+    // -----------------------------------------------------------------------
+    function selectPortion(ms) {
+      state.v9_portionMs = ms;
+      sendBlynkUpdate('v9', ms);
+      document.querySelectorAll('.portion-btn').forEach(btn => {
+        const val = parseInt(btn.dataset.portion, 10);
+        if (val === ms) {
+          btn.className = 'portion-btn py-1.5 px-2 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-2xs transition text-center';
+        } else {
+          btn.className = 'portion-btn py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition text-center';
+        }
+      });
+    }
+
+    function setHopperLevelSim(pct) {
+      state.v7_hopperLevel = pct;
+      if (pct <= 20) {
+        triggerPushAlert('REFILL FOOD');
+      } else {
+        showToast(`Hopper food level updated to ${pct}%.`, 'teal');
+      }
+      updateAllUI();
+    }
+
+    function toggleBowlFoodSim() {
+      state.v8_bowlHasFood = !state.v8_bowlHasFood;
+      showToast(
+        state.v8_bowlHasFood
+          ? 'Bowl IR Sensor: Food detected in bowl.'
+          : 'Bowl IR Sensor: Bowl is now empty (pet finished eating).',
+        'indigo'
+      );
+      updateAllUI();
+    }
+
+    function triggerManualFeed(sourceLabel = 'Manual App') {
+      if (state.v10_feeding) return;
+
+      // Step 11 of Proposal: Skip feeding if IR sensor shows bowl still has food
+      if (state.v8_bowlHasFood) {
+        showToast('Feeding skipped: Bowl IR sensor detects food is still in the bowl.', 'amber');
+        state.feedingLogs.unshift({
+          time: formatShortTime(new Date()),
+          trigger: sourceLabel,
+          portion: `${(state.v9_portionMs / 1000).toFixed(1)}s`,
+          status: 'Skipped (Bowl Full)',
+          ok: false,
+        });
+        renderFeedingLogs();
+        return;
+      }
+
+      state.v10_feeding = true;
+      sendBlynkUpdate('v10', 1);
+      const btn = document.getElementById('btn-manual-feed');
+      const servoText = document.getElementById('servo-motor-status');
+      btn.disabled = true;
+      btn.innerHTML = '<span>Dispensing...</span>';
+      servoText.textContent = `Servo: Rotating 360° (${(state.v9_portionMs / 1000).toFixed(1)}s)`;
+      servoText.className = 'text-[11px] font-mono font-bold text-indigo-600';
+
+      const simulateJam = document.getElementById('sim-feeder-jam')?.checked || false;
+
+      setTimeout(() => {
+        state.v10_feeding = false;
+        sendBlynkUpdate('v10', 0);
+        btn.disabled = false;
+        btn.innerHTML = '<span>Manual Feed</span><span class="font-mono text-[10px] bg-indigo-500/80 px-1.5 py-0.5 rounded">V10</span>';
+        servoText.textContent = 'Servo: Idle (90 PWM Stop)';
+        servoText.className = 'text-[11px] font-mono font-semibold text-slate-500';
+
+        // Post-dispense IR verification check
+        if (simulateJam) {
+          state.v8_bowlHasFood = false;
+          triggerPushAlert('FOOD NOT DISPENSED');
+          state.feedingLogs.unshift({
+            time: formatShortTime(new Date()),
+            trigger: sourceLabel,
+            portion: `${(state.v9_portionMs / 1000).toFixed(1)}s`,
+            status: 'Alert: Not Dispensed',
+            ok: false,
+          });
+        } else {
+          state.v8_bowlHasFood = true;
+          const dropPct = state.v9_portionMs === 1500 ? 5 : state.v9_portionMs === 2500 ? 8 : 12;
+          state.v7_hopperLevel = Math.max(0, state.v7_hopperLevel - dropPct);
+          if (state.v7_hopperLevel <= 20) {
+            triggerPushAlert('REFILL FOOD');
+          }
+          state.feedingLogs.unshift({
+            time: formatShortTime(new Date()),
+            trigger: sourceLabel,
+            portion: `${(state.v9_portionMs / 1000).toFixed(1)}s`,
+            status: 'Verified in Bowl',
+            ok: true,
+          });
+          captureCameraSnapshot('Feeding Event');
+          showToast('Portion dispensed and verified by Bowl IR sensor!', 'teal');
+        }
+
+        renderFeedingLogs();
+        updateAllUI();
+      }, Math.min(state.v9_portionMs, 2400));
+    }
+
+    // Schedule CRUD
+    function toggleAddScheduleForm() {
+      document.getElementById('add-schedule-form').classList.toggle('hidden');
+    }
+
+    function addFeedingSchedule() {
+      const timeVal = document.getElementById('new-sched-time').value;
+      const portionMs = parseInt(document.getElementById('new-sched-portion').value, 10);
+      if (!timeVal) return;
+
+      state.schedules.push({
+        id: Date.now(),
+        time: timeVal,
+        portionMs,
+        enabled: true,
+      });
+      state.schedules.sort((a, b) => a.time.localeCompare(b.time));
+      toggleAddScheduleForm();
+      renderSchedules();
+      showToast(`Added feeding schedule at ${format24To12(timeVal)}.`, 'indigo');
+    }
+
+    function toggleScheduleEnabled(id) {
+      const item = state.schedules.find(s => s.id === id);
+      if (item) {
+        item.enabled = !item.enabled;
+        renderSchedules();
+      }
+    }
+
+    function deleteSchedule(id) {
+      state.schedules = state.schedules.filter(s => s.id !== id);
+      renderSchedules();
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. ESP32-CAM VIEWPORT & SNAPSHOT CAPTURE
+    // -----------------------------------------------------------------------
+    function applyCameraUrl() {
+      const urlInput = document.getElementById('cam-stream-url').value.trim();
+      if (!urlInput) return;
+      state.camUrl = urlInput;
+
+      // If user enters a custom non-default IP, attempt live MJPEG stream image load with graceful fallback
+      if (urlInput !== 'http://192.168.1.50:81/stream') {
+        const img = document.getElementById('esp32-cam-live-img');
+        const canvas = document.getElementById('esp32-cam-canvas');
+        img.src = urlInput;
+        img.classList.remove('hidden');
+        canvas.classList.add('hidden');
+        state.usingLiveStreamImg = true;
+        document.getElementById('cam-live-pill').innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> LIVE • HTTP STREAM';
+        showToast(`Connecting to ESP32-CAM stream: ${urlInput}`, 'teal');
+      } else {
+        handleLiveStreamError(true);
+      }
+    }
+
+    function handleLiveStreamError(silent = false) {
+      const img = document.getElementById('esp32-cam-live-img');
+      const canvas = document.getElementById('esp32-cam-canvas');
+      img.classList.add('hidden');
+      canvas.classList.remove('hidden');
+      state.usingLiveStreamImg = false;
+      document.getElementById('cam-live-pill').innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span> LIVE • OV2640 SIM';
+      if (!silent) {
+        showToast('ESP32-CAM local IP unreachable from browser — displaying simulated station camera feed.', 'amber');
+      }
+    }
+
+    function captureCameraSnapshot(reason = 'Manual Capture') {
+      sendBlynkUpdate('v11', 1);
+
+      // Trigger shutter flash animation
+      const flash = document.getElementById('cam-shutter-flash');
+      flash.classList.remove('animate-shutter');
+      void flash.offsetWidth;
+      flash.classList.add('animate-shutter');
+
+      const canvas = document.getElementById('esp32-cam-canvas');
+      const dataUrl = canvas.toDataURL('image/png');
+
+      state.snapshots.unshift({
+        id: Date.now(),
+        reason,
+        time: formatShortTime(new Date()),
+        img: dataUrl,
+      });
+      if (state.snapshots.length > 6) state.snapshots.pop();
+
+      renderSnapshots();
+      setTimeout(() => sendBlynkUpdate('v11', 0), 500);
+    }
+
+    function seedInitialSnapshots() {
+      // Generate 3 realistic initial snapshots by rendering momentary scene states
+      const canvas = document.getElementById('esp32-cam-canvas');
+      drawCameraScene(canvas.getContext('2d'), canvas.width, canvas.height, false, true);
+      state.snapshots.push({
+        id: 1,
+        reason: 'Feeding Event',
+        time: '01:00 PM',
+        img: canvas.toDataURL('image/png'),
+      });
+      drawCameraScene(canvas.getContext('2d'), canvas.width, canvas.height, true, false);
+      state.snapshots.push({
+        id: 2,
+        reason: 'Pet Approach',
+        time: '11:42 AM',
+        img: canvas.toDataURL('image/png'),
+      });
+      drawCameraScene(canvas.getContext('2d'), canvas.width, canvas.height, false, false);
+      state.snapshots.push({
+        id: 3,
+        reason: 'Scheduled Check',
+        time: '09:15 AM',
+        img: canvas.toDataURL('image/png'),
+      });
+      renderSnapshots();
+    }
+
+    // Animated HTML5 Canvas representing the OV2640 camera aimed at the PawSense bowls
+    function startCameraCanvasLoop() {
+      const mainCanvas = document.getElementById('esp32-cam-canvas');
+      const mainCtx = mainCanvas.getContext('2d');
+      const mobileCanvas = document.getElementById('mobile-cam-mirror');
+      const mobileCtx = mobileCanvas ? mobileCanvas.getContext('2d') : null;
+
+      function frame() {
+        drawCameraScene(mainCtx, mainCanvas.width, mainCanvas.height, state.v4_petDetected, state.v8_bowlHasFood);
+        if (mobileCtx && state.viewMode === 'mobile') {
+          mobileCtx.drawImage(mainCanvas, 0, 0);
+        }
+        const clockEl = document.getElementById('cam-clock-overlay');
+        if (clockEl) clockEl.textContent = new Date().toLocaleTimeString();
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function drawCameraScene(ctx, w, h, petPresent, hasFood) {
+      const t = Date.now() / 1000;
+
+      // Tabletop & Station Base Background
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+      bgGrad.addColorStop(0, '#1e293b');
+      bgGrad.addColorStop(0.55, '#334155');
+      bgGrad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      // White Prototype Housing Deck
+      ctx.fillStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.roundRect(70, 120, 500, 195, 28);
+      ctx.fill();
+
+      // UV-C Chamber Glow on Left Side (Only visible when UV-C Interlock is SAFE / ON)
+      if (!petPresent) {
+        const uvGlow = ctx.createRadialGradient(185, 130, 10, 185, 150, 110);
+        uvGlow.addColorStop(0, 'rgba(56, 189, 248, 0.75)');
+        uvGlow.addColorStop(1, 'rgba(56, 189, 248, 0)');
+        ctx.fillStyle = uvGlow;
+        ctx.fillRect(80, 50, 220, 180);
+      }
+
+      // Left Bowl: Water Fountain Basin
+      ctx.fillStyle = '#94a3b8';
+      ctx.beginPath();
+      ctx.ellipse(210, 225, 88, 44, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Water inside basin (tinted slightly if turbidity is high)
+      const isDirty = state.v1_turbidity > state.v2_threshold;
+      ctx.fillStyle = isDirty ? 'rgba(180, 155, 95, 0.85)' : 'rgba(20, 184, 166, 0.72)';
+      ctx.beginPath();
+      ctx.ellipse(210, 227, 78, 36, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Animated Water Ripples
+      const rippleR = 14 + ((t * 22) % 45);
+      const rippleAlpha = Math.max(0, 0.65 - rippleR / 70);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${rippleAlpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(210, 227, rippleR, rippleR * 0.45, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Right Bowl: Stainless Steel Food Bowl
+      ctx.fillStyle = '#64748b';
+      ctx.beginPath();
+      ctx.ellipse(430, 225, 88, 44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#cbd5e1';
+      ctx.beginPath();
+      ctx.ellipse(430, 227, 76, 35, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Kibble Pellets if Bowl IR Sensor detects food
+      if (hasFood) {
+        const kibbleOffsets = [
+          [-24, 4], [-10, -6], [6, 3], [22, -4], [-15, 11],
+          [0, 12], [18, 9], [-4, -13], [12, -11], [-28, -3], [28, 4]
+        ];
+        kibbleOffsets.forEach(([dx, dy]) => {
+          ctx.fillStyle = '#92400e';
+          ctx.beginPath();
+          ctx.ellipse(430 + dx, 226 + dy, 9, 6, 0.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#b45309';
+          ctx.beginPath();
+          ctx.ellipse(429 + dx, 224 + dy, 6, 3.5, 0.2, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      // Animated Pet Silhouette if Ultrasonic Proximity <= 30cm
+      if (petPresent) {
+        const bob = Math.sin(t * 7) * 5;
+        ctx.save();
+        ctx.translate(215, 145 + bob);
+        // Cute pet head & ears peeking at fountain
+        ctx.fillStyle = '#f59e0b';
+        // Left Ear
+        ctx.beginPath();
+        ctx.moveTo(-42, -25);
+        ctx.lineTo(-55, -68);
+        ctx.lineTo(-16, -42);
+        ctx.closePath();
+        ctx.fill();
+        // Right Ear
+        ctx.beginPath();
+        ctx.moveTo(42, -25);
+        ctx.lineTo(55, -68);
+        ctx.lineTo(16, -42);
+        ctx.closePath();
+        ctx.fill();
+        // Head
+        ctx.beginPath();
+        ctx.arc(0, -10, 46, 0, Math.PI * 2);
+        ctx.fill();
+        // Eyes
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(-16, -14, 5, 0, Math.PI * 2);
+        ctx.arc(16, -14, 5, 0, Math.PI * 2);
+        ctx.fill();
+        // Nose
+        ctx.fillStyle = '#be123c';
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 7, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. PUSH NOTIFICATIONS (THE 5 PAWSENSE ALERTS) & AMBIENT TICK
+    // -----------------------------------------------------------------------
+    const ALERT_DETAILS = {
+      'REFILL CLEAN WATER': {
+        severity: 'amber',
+        desc: 'Clean-water reservoir level low (Float Switch open). Please refill 500 mL tank.',
+      },
+      'HIGH TURBIDITY DETECTED': {
+        severity: 'rose',
+        desc: 'Water clarity exceeded NTU limit. 3-way valve flushing dirty water to waste tank.',
+      },
+      'REFILL FOOD': {
+        severity: 'amber',
+        desc: 'Feeder hopper ultrasonic level <= 20%. Refill dry kibble soon.',
+      },
+      'FOOD NOT DISPENSED': {
+        severity: 'rose',
+        desc: '360° servo ran but Bowl IR sensor still detects an empty bowl. Check hopper chute.',
+      },
+      'PET HAS NOT EATEN': {
+        severity: 'indigo',
+        desc: 'Dispensed food has remained untouched in the bowl for over 2 hours.',
+      },
+    };
+
+    function triggerPushAlert(alertCode) {
+      const meta = ALERT_DETAILS[alertCode] || { severity: 'amber', desc: 'System alert triggered.' };
+      state.v14_lastAlert = alertCode;
+      sendBlynkUpdate('v14', alertCode);
+
+      const newAlert = {
+        id: Date.now() + Math.random(),
+        code: alertCode,
+        desc: meta.desc,
+        severity: meta.severity,
+        time: formatShortTime(new Date()),
+      };
+      state.alerts.unshift(newAlert);
+      if (state.alerts.length > 10) state.alerts.pop();
+
+      renderAlerts();
+      updateAllUI();
+
+      // Trigger Mobile Companion drop-down push banner
+      const banner = document.getElementById('mobile-push-banner');
+      document.getElementById('mobile-banner-title').textContent = alertCode;
+      document.getElementById('mobile-banner-body').textContent = meta.desc;
+      banner.classList.remove('hidden');
+      clearTimeout(window._mobileBannerTimer);
+      window._mobileBannerTimer = setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 4500);
+
+      showToast(`PUSH ALERT: ${alertCode}`, meta.severity);
+    }
+
+    function dismissAlert(id) {
+      state.alerts = state.alerts.filter(a => a.id !== id);
+      renderAlerts();
+      updateAllUI();
+    }
+
+    function clearAllAlerts() {
+      state.alerts = [];
+      state.v14_lastAlert = 'NONE';
+      renderAlerts();
+      updateAllUI();
+    }
+
+    function startAmbientSimulatorTick() {
+      // Gently accumulate UV-C runtime when sterilizing in simulator mode
+      setInterval(() => {
+        if (state.connectionMode === 'simulator' && !state.v4_petDetected && !state.v6_flushing) {
+          state.v5_uvRuntime = +(state.v5_uvRuntime + 0.01).toFixed(2);
+          const uvText = document.getElementById('uv-runtime-text');
+          const mobUv = document.getElementById('mobile-uv-val');
+          if (uvText) uvText.textContent = `${state.v5_uvRuntime.toFixed(1)} hrs`;
+          if (mobUv) mobUv.textContent = `${state.v5_uvRuntime.toFixed(1)} hrs`;
+        }
+      }, 4000);
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. DOM RENDERERS & SYNCHRONIZATION (WEB + MOBILE COMPANION)
+    // -----------------------------------------------------------------------
+    function updateAllUI() {
+      // 1. Water Purity & Turbidity
+      document.getElementById('water-purity-val').textContent = `${state.v0_purity}%`;
+      document.getElementById('turbidity-ntu-val').textContent = state.v1_turbidity.toFixed(1);
+      const circle = document.getElementById('purity-gauge-circle');
+      const circumference = 251.3;
+      circle.style.strokeDashoffset = circumference - (state.v0_purity / 100) * circumference;
+
+      const qualityPill = document.getElementById('water-quality-pill');
+      if (state.v1_turbidity > state.v2_threshold) {
+        circle.style.stroke = '#e11d48';
+        qualityPill.className = 'mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800';
+        qualityPill.textContent = '● High Turbidity (> Limit)';
+      } else {
+        circle.style.stroke = '#0d9488';
+        qualityPill.className = 'mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800';
+        qualityPill.textContent = '● Crystal Clear';
+      }
+
+      // 2. Reservoir & Float Switch
+      const fillPct = Math.round((state.reservoirMl / 500) * 100);
+      document.getElementById('reservoir-water-fill').style.height = `${fillPct}%`;
+      document.getElementById('reservoir-ml-text').textContent = `${state.reservoirMl} mL`;
+      const floatBadge = document.getElementById('float-switch-badge');
+      if (state.v3_reservoirOk) {
+        floatBadge.className = 'mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
+        floatBadge.textContent = 'Float Switch: OK';
+      } else {
+        floatBadge.className = 'mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200';
+        floatBadge.textContent = 'Float Switch: LOW';
+      }
+
+      // 3. Eye-Safety Optical Interlock (V4)
+      const interlockCard = document.getElementById('interlock-card');
+      const interlockIcon = document.getElementById('interlock-icon-box');
+      const interlockStatus = document.getElementById('interlock-status-text');
+      const interlockSub = document.getElementById('interlock-sub-text');
+      const camZoneOverlay = document.getElementById('cam-zone-overlay');
+
+      if (state.v4_petDetected) {
+        interlockCard.className = 'mt-4 rounded-2xl border p-4 transition-all duration-300 bg-amber-50 border-amber-300 shadow-xs';
+        interlockIcon.className = 'w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs animate-pulse';
+        interlockStatus.className = 'text-sm font-extrabold text-amber-950 mt-0.5';
+        interlockStatus.textContent = 'Pet Within 30cm - UV-C Cut & Pump Ramped';
+        interlockSub.className = 'text-xs text-amber-800 mt-0.5';
+        interlockSub.textContent = 'Eye-safety interlock active • UV-C Relay OFF • Pump at 100% PWM';
+        camZoneOverlay.textContent = 'PET WITHIN 30CM • UV-C CUT';
+        camZoneOverlay.className = 'px-2.5 py-1 rounded-lg bg-amber-500/90 text-slate-950 font-bold text-[11px] font-mono truncate';
+      } else {
+        interlockCard.className = 'mt-4 rounded-2xl border p-4 transition-all duration-300 bg-emerald-50/80 border-emerald-200';
+        interlockIcon.className = 'w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs';
+        interlockStatus.className = 'text-sm font-extrabold text-emerald-900 mt-0.5';
+        interlockStatus.textContent = 'UV-C Sterilizing';
+        interlockSub.className = 'text-xs text-emerald-700 mt-0.5';
+        interlockSub.textContent = 'Zone clear (>30 cm) • UV-C Relay ON • Fountain Pump Normal (45% PWM)';
+        camZoneOverlay.textContent = 'Zone Clear • UV-C Active';
+        camZoneOverlay.className = 'px-2.5 py-1 rounded-lg bg-slate-950/75 backdrop-blur-xs text-emerald-300 text-[11px] font-mono truncate';
+      }
+
+      // 4. 3-Way Valve State (V6)
+      const valveBadge = document.getElementById('valve-state-badge');
+      if (state.v6_flushing) {
+        valveBadge.className = 'mt-1 inline-flex items-center gap-1 text-xs font-bold text-amber-700';
+        valveBadge.textContent = '● Waste Drain (90°)';
+      } else {
+        valveBadge.className = 'mt-1 inline-flex items-center gap-1 text-xs font-bold text-teal-700';
+        valveBadge.textContent = '● Drinking (0°)';
+      }
+
+      // 5. Hopper & Bowl IR Sensor (V7 & V8)
+      document.getElementById('hopper-level-val').textContent = `${state.v7_hopperLevel}%`;
+      const hopperBar = document.getElementById('hopper-level-bar');
+      hopperBar.style.width = `${state.v7_hopperLevel}%`;
+      const hopperStatus = document.getElementById('hopper-status-text');
+      if (state.v7_hopperLevel <= 20) {
+        hopperBar.className = 'h-full bg-amber-500 rounded-full transition-all duration-500';
+        hopperStatus.className = 'text-xs font-bold text-amber-700';
+        hopperStatus.textContent = 'Low Food!';
+      } else {
+        hopperBar.className = 'h-full bg-gradient-to-r from-indigo-500 to-sky-500 rounded-full transition-all duration-500';
+        hopperStatus.className = 'text-xs font-semibold text-emerald-700';
+        hopperStatus.textContent = 'Well Stocked';
+      }
+
+      const bowlDot = document.getElementById('bowl-ir-dot');
+      const bowlStatus = document.getElementById('bowl-ir-status');
+      const bowlSub = document.getElementById('bowl-ir-sub');
+      if (state.v8_bowlHasFood) {
+        bowlDot.className = 'w-3.5 h-3.5 rounded-full bg-emerald-500 shrink-0';
+        bowlStatus.textContent = 'Food Detected in Bowl';
+        bowlSub.textContent = 'IR Beam Blocked • Auto-skip active';
+      } else {
+        bowlDot.className = 'w-3.5 h-3.5 rounded-full bg-slate-400 shrink-0';
+        bowlStatus.textContent = 'Bowl Empty';
+        bowlSub.textContent = 'IR Beam Clear • Ready to dispense';
+      }
+
+      // 6. Analytics & Alert Counts
+      document.getElementById('daily-visits-val').textContent = state.v12_dailyVisits;
+      document.getElementById('drinking-duration-val').textContent = `${state.v13_drinkingSec}s`;
+      const mins = Math.floor(state.v13_drinkingSec / 60);
+      const remSec = state.v13_drinkingSec % 60;
+      const avg = state.v12_dailyVisits > 0 ? (state.v13_drinkingSec / state.v12_dailyVisits).toFixed(1) : '0.0';
+      document.getElementById('avg-drink-text').textContent = `${mins}m ${remSec}s total • Avg ${avg}s / visit`;
+
+      const alertCountBadge = document.getElementById('active-alert-count');
+      alertCountBadge.textContent = `${state.alerts.length} Active`;
+      alertCountBadge.className = state.alerts.length > 0
+        ? 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700'
+        : 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-600';
+
+      // 7. Synchronize Mobile Companion Preview
+      syncMobileCompanionUI();
+    }
+
+    function syncMobileCompanionUI() {
+      document.getElementById('mobile-purity-val').textContent = `${state.v0_purity}%`;
+      document.getElementById('mobile-ntu-val').textContent = `${state.v1_turbidity.toFixed(1)} NTU`;
+      document.getElementById('mobile-hopper-val').textContent = `${state.v7_hopperLevel}%`;
+      document.getElementById('mobile-bowl-val').textContent = state.v8_bowlHasFood ? 'Bowl: Food Detected' : 'Bowl: Empty';
+      document.getElementById('mobile-reservoir-val').textContent = state.v3_reservoirOk ? `${state.reservoirMl} mL • OK` : `${state.reservoirMl} mL • LOW`;
+      document.getElementById('mobile-valve-val').textContent = state.v6_flushing ? 'Waste Drain (90°)' : 'Drinking (0°)';
+      document.getElementById('mobile-uv-val').textContent = `${state.v5_uvRuntime.toFixed(1)} hrs`;
+      document.getElementById('mobile-visits-val').textContent = state.v12_dailyVisits;
+      document.getElementById('mobile-duration-val').textContent = `${state.v13_drinkingSec}s`;
+
+      const mInterlockBox = document.getElementById('mobile-interlock-box');
+      const mInterlockTitle = document.getElementById('mobile-interlock-title');
+      const mInterlockSub = document.getElementById('mobile-interlock-sub');
+      if (state.v4_petDetected) {
+        mInterlockBox.className = 'p-3.5 rounded-2xl bg-amber-50 border border-amber-300 flex items-center justify-between';
+        mInterlockTitle.className = 'text-sm font-extrabold text-amber-950 mt-0.5';
+        mInterlockTitle.textContent = 'Pet Within 30cm - UV-C Cut';
+        mInterlockSub.className = 'text-[11px] text-amber-800';
+        mInterlockSub.textContent = 'UV-C Relay OFF • Pump Ramped';
+      } else {
+        mInterlockBox.className = 'p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between';
+        mInterlockTitle.className = 'text-sm font-extrabold text-emerald-950 mt-0.5';
+        mInterlockTitle.textContent = 'UV-C Sterilizing';
+        mInterlockSub.className = 'text-[11px] text-emerald-700';
+        mInterlockSub.textContent = 'Zone clear (>30cm)';
+      }
+
+      const mAlertPill = document.getElementById('mobile-alert-pill');
+      if (state.alerts.length > 0) {
+        mAlertPill.className = 'cursor-pointer px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200';
+        mAlertPill.textContent = `${state.alerts.length} Alert${state.alerts.length > 1 ? 's' : ''}`;
+      } else {
+        mAlertPill.className = 'cursor-pointer px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
+        mAlertPill.textContent = 'All Clear';
+      }
+    }
+
+    function switchMobileTab(tabName) {
+      ['home', 'camera', 'schedule', 'alerts'].forEach(t => {
+        const panel = document.getElementById(`mobile-tab-${t}`);
+        if (panel) panel.classList.toggle('hidden', t !== tabName);
+      });
+      document.querySelectorAll('.mtab-btn').forEach(btn => {
+        const active = btn.dataset.mtab === tabName;
+        btn.className = active
+          ? 'mtab-btn py-1.5 rounded-xl flex flex-col items-center text-teal-700 bg-teal-50 font-bold text-[10px]'
+          : 'mtab-btn py-1.5 rounded-xl flex flex-col items-center text-slate-500 hover:text-slate-900 font-semibold text-[10px]';
+      });
+    }
+
+    function renderSchedules() {
+      const container = document.getElementById('schedule-list');
+      const mobContainer = document.getElementById('mobile-schedule-list');
+      const portionLabel = ms => (ms === 1500 ? 'Small (1.5s)' : ms === 2500 ? 'Medium (2.5s)' : 'Large (3.5s)');
+
+      const html = state.schedules.map(s => `
+        <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+          <div class="flex items-center gap-2.5">
+            <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleScheduleEnabled(${s.id})"
+              class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+            <div>
+              <span class="text-xs font-mono font-bold ${s.enabled ? 'text-slate-900' : 'text-slate-400 line-through'}">${format24To12(s.time)}</span>
+              <span class="ml-2 text-[11px] text-slate-500">${portionLabel(s.portionMs)}</span>
+            </div>
+          </div>
+          <button onclick="deleteSchedule(${s.id})" class="text-slate-400 hover:text-rose-600 p-1 rounded transition" title="Remove schedule">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      `).join('');
+
+      container.innerHTML = html || '<p class="text-xs text-slate-400 py-2">No feeding schedules set.</p>';
+      if (mobContainer) mobContainer.innerHTML = html;
+    }
+
+    function renderSnapshots() {
+      const strip = document.getElementById('snapshots-strip');
+      const mobList = document.getElementById('mobile-snapshots-list');
+      document.getElementById('snapshot-count-label').textContent = `${state.snapshots.length} saved`;
+
+      strip.innerHTML = state.snapshots.slice(0, 3).map(snap => `
+        <div class="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 aspect-video">
+          <img src="${snap.img}" alt="${snap.reason}" class="w-full h-full object-cover" />
+          <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/90 via-slate-950/50 to-transparent p-1.5">
+            <div class="text-[10px] font-bold text-white truncate">${snap.reason}</div>
+            <div class="text-[9px] font-mono text-slate-300">${snap.time}</div>
+          </div>
+        </div>
+      `).join('');
+
+      if (mobList) {
+        mobList.innerHTML = state.snapshots.slice(0, 4).map(snap => `
+          <div class="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200">
+            <img src="${snap.img}" alt="${snap.reason}" class="w-16 h-10 rounded-lg object-cover bg-slate-900 shrink-0" />
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-slate-800 truncate">${snap.reason}</div>
+              <div class="text-[10px] font-mono text-slate-500">${snap.time}</div>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    function renderDrinkingChart() {
+      const chart = document.getElementById('drinking-bar-chart');
+      const labels = document.getElementById('drinking-bar-labels');
+      const maxVal = Math.max(...state.hourlyDrinking.map(d => d.sec), 60);
+
+      chart.innerHTML = state.hourlyDrinking.map(d => {
+        const pct = Math.max(6, Math.round((d.sec / maxVal) * 100));
+        return `
+          <div class="flex-1 h-full flex flex-col justify-end items-center group relative">
+            <span class="opacity-0 group-hover:opacity-100 transition text-[10px] font-mono font-bold text-teal-800 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded mb-1">
+              ${d.sec}s
+            </span>
+            <div class="w-full max-w-[28px] rounded-t-lg bg-gradient-to-t from-teal-600 to-emerald-400 group-hover:from-teal-500 group-hover:to-emerald-300 transition-all duration-500" style="height: ${pct}%;"></div>
+          </div>
+        `;
+      }).join('');
+
+      labels.innerHTML = state.hourlyDrinking.map(d => `<span class="flex-1 text-center">${d.label}</span>`).join('');
+    }
+
+    function renderAlerts() {
+      const feed = document.getElementById('push-alerts-feed');
+      const mobFeed = document.getElementById('mobile-alerts-list');
+
+      if (state.alerts.length === 0) {
+        const emptyHtml = `
+          <div class="text-center py-4 text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+            No active maintenance alerts. All station parameters normal.
+          </div>`;
+        feed.innerHTML = emptyHtml;
+        if (mobFeed) mobFeed.innerHTML = emptyHtml;
+        return;
+      }
+
+      const html = state.alerts.map(a => {
+        const colorCls = a.severity === 'rose'
+          ? 'bg-rose-50 border-rose-200 text-rose-900'
+          : a.severity === 'indigo'
+          ? 'bg-indigo-50 border-indigo-200 text-indigo-900'
+          : 'bg-amber-50 border-amber-200 text-amber-900';
+        return `
+          <div class="p-2.5 rounded-xl border ${colorCls} flex items-start justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-mono font-extrabold">${a.code}</span>
+                <span class="text-[10px] font-mono opacity-75">${a.time}</span>
+              </div>
+              <p class="text-[11px] opacity-90 mt-0.5">${a.desc}</p>
+            </div>
+            <button onclick="dismissAlert(${a.id})" class="text-[11px] font-semibold underline opacity-75 hover:opacity-100 shrink-0">
+              Dismiss
+            </button>
+          </div>
+        `;
+      }).join('');
+
+      feed.innerHTML = html;
+      if (mobFeed) mobFeed.innerHTML = html;
+    }
+
+    function renderFeedingLogs() {
+      const list = document.getElementById('feeding-logs-list');
+      const mobLogs = document.getElementById('mobile-logs-list');
+
+      const html = state.feedingLogs.map(log => `
+        <div class="flex items-center justify-between text-xs px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/70">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="font-mono font-bold text-slate-700 shrink-0">${log.time}</span>
+            <span class="text-slate-500 truncate">${log.trigger} • ${log.portion}</span>
+          </div>
+          <span class="px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${log.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}">
+            ${log.status}
+          </span>
+        </div>
+      `).join('');
+
+      list.innerHTML = html;
+      if (mobLogs) mobLogs.innerHTML = html;
+    }
+
+    // -----------------------------------------------------------------------
+    // 10. HELPERS: TOASTS, MODAL & CLIPBOARD
+    // -----------------------------------------------------------------------
+    function showToast(message, tone = 'teal') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const styles = {
+        teal: 'bg-slate-900 text-white border-teal-500',
+        indigo: 'bg-slate-900 text-white border-indigo-500',
+        amber: 'bg-amber-950 text-amber-50 border-amber-400',
+        rose: 'bg-rose-950 text-rose-50 border-rose-400',
+      };
+      toast.className = `pointer-events-auto px-4 py-3 rounded-xl border-l-4 shadow-lg text-xs font-medium flex items-center justify-between gap-3 transition-all duration-300 ${styles[tone] || styles.teal}`;
+      toast.innerHTML = `<span>${message}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(6px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 3600);
+    }
+
+    function toggleVpinModal(open) {
+      const modal = document.getElementById('vpin-modal');
+      if (open) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      } else {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
+
+    function populateVpinTable() {
+      const tbody = document.getElementById('vpin-table-body');
+      tbody.innerHTML = VPIN_DEFINITIONS.map(item => `
+        <tr class="hover:bg-slate-50">
+          <td class="py-2 px-3 font-mono font-bold text-teal-700">${item.pin}</td>
+          <td class="py-2 px-3 font-semibold text-slate-900">${item.name}</td>
+          <td class="py-2 px-3 text-slate-600">${item.hw}</td>
+          <td class="py-2 px-3 font-mono text-[11px] text-slate-500">${item.type}</td>
+        </tr>
+      `).join('');
+    }
+
+    function copyPinTableToClipboard() {
+      const text = VPIN_DEFINITIONS.map(p => `${p.pin}: ${p.name} (${p.hw}) [${p.type}]`).join('\n');
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      showToast('Copied PawSense Virtual Pin Map (V0–V14) to clipboard!', 'teal');
+    }
+
+    function formatShortTime(date) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function format24To12(time24) {
+      const [hStr, mStr] = time24.split(':');
+      let h = parseInt(hStr, 10);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      return `${String(h).padStart(2, '0')}:${mStr} ${ampm}`;
+    }
+  </script>
+</body>
+</html>
